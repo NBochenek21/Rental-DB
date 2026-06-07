@@ -27,10 +27,10 @@ Każda osoba pracuje w swoim katalogu/obszarze. Szczegóły zadań w `docs/SEKCJ
 
 | Sekcja | Obszar | Osoba | Główne pliki |
 |--------|--------|-------|--------------|
-| **1** | Analiza wymagań | _________ | `docs/01_analiza_wymagan.md` |
-| **2** | Projekt logiczny i fizyczny (ERD + schemat + 3NF) | _________ | `docs/02_projekt.md`, `sql/01_schema/`, `sql/02_constraints/` |
-| **3** | Implementacja (widoki, funkcje, wyzwalacze, transakcje, zapytania) | _________ | `sql/03_views/`, `sql/04_functions/`, `sql/05_triggers/`, `sql/08_queries/` |
-| **4** | Dokumentacja techniczna + bezpieczeństwo (role/uprawnienia) | _________ | `docs/03_dokumentacja_techniczna.md`, `sql/06_security/` |
+| **1** | Analiza wymagań | Wspólnie | `docs/01_analiza_wymagan.md` |
+| **2** | Projekt logiczny i fizyczny (ERD + schemat + 3NF) | Jakub + Norbert | `docs/02_projekt.md`, `sql/01_schema/`, `sql/02_constraints/` |
+| **3** | Implementacja (widoki, funkcje, wyzwalacze, transakcje, zapytania) | Kacper + Mati | `sql/03_views/`, `sql/04_functions/`, `sql/05_triggers/`, `sql/08_queries/` |
+| **4** | Dokumentacja techniczna + bezpieczeństwo (role/uprawnienia) | Wspólnie | `docs/03_dokumentacja_techniczna.md`, `sql/06_security/` |
 
 > Sekcje 2, 3 i 4 zależą od siebie w tej kolejności. Sekcja 1 jest punktem wyjścia dla wszystkich. Zob. `docs/SEKCJE.md` po opis zależności i kontrakt między sekcjami (nazwy tabel/kolumn).
 
