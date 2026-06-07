@@ -1,100 +1,101 @@
-# System Obsługi Wynajmu Mieszkań — projekt z baz danych
+# Analiza wymagań — System Obsługi Wynajmu Mieszkań
 
-System bazodanowy obsługujący wynajem mieszkań: ogłoszenia, umowy, płatności, historię najmu i profile najemców.
+> SEKCJA 1. Ten dokument jest punktem wyjścia dla całego projektu. Reguły biznesowe stąd są implementowane jako więzy integralności, funkcje i wyzwalacze w sekcjach 2–3.
 
-- **SZBD:** PostgreSQL (zalecane 14+)
-- **Cel oceny:** 4.5 (3NF, transakcje + poziomy izolacji, bezpieczeństwo: role i uprawnienia)
-- **Zespół:** 4 osoby, podział wg obszarów prac
+## 1. Cel i zakres systemu
 
----
+System wspiera kompleksowe zarządzanie procesem wynajmu mieszkań — od momentu wystawienia oferty, przez zawarcie umowy, aż po rozliczenia finansowe i archiwizację zakończonych najmów. Odbiorcą jest niewielkie biuro pośrednictwa lub zarządca prywatnych nieruchomości, który obsługuje wiele mieszkań należących do różnych właścicieli i potrzebuje jednego, spójnego źródła prawdy o stanie każdego z nich.
 
-## Zakres na ocenę 4.5
+Główny problem, który system rozwiązuje, to rozproszenie informacji: dane o ogłoszeniach, umowach i płatnościach prowadzone osobno (np. w arkuszach) szybko się rozjeżdżają — trudno stwierdzić, które mieszkanie jest faktycznie wolne, kto zalega z czynszem i jaka jest historia danego najemcy. System centralizuje te dane i pilnuje ich spójności za pomocą reguł wymuszanych na poziomie bazy.
 
-Projekt celowo realizuje wymagania **do poziomu 4.5 włącznie**:
+Zakres obejmuje: ewidencję właścicieli, mieszkań i najemców; publikację ogłoszeń; zawieranie i ewidencję umów najmu; naliczanie oraz rejestrację miesięcznych płatności; śledzenie zaległości; prowadzenie historii najmu. Poza zakresem pozostają: obsługa płatności online, komunikacja z najemcami (powiadomienia), moduł rezerwacji oraz integracje zewnętrzne — system odpowiada wyłącznie za warstwę danych.
 
-| Poziom | Wymaganie | Status w projekcie |
-|--------|-----------|--------------------|
-| 3.0 | Podstawowe funkcjonalności, 2NF, prosta dokumentacja | ✅ |
-| 3.5–4.0 | Zaawansowane zapytania (zagnieżdżone, widoki), wyzwalacze + procedury/funkcje (PL/pgSQL), ERD | ✅ |
-| 4.5 | **3NF**, **transakcje + poziomy izolacji**, **role i uprawnienia** | ✅ |
-| 5.0 | EXPLAIN/optymalizacja, studium przypadku, prezentacja | ❌ poza zakresem (świadomie) |
+## 2. Aktorzy
 
----
+| Aktor | Opis | Przykładowe operacje |
+|-------|------|----------------------|
+| Najemca | Osoba wynajmująca mieszkanie. W systemie reprezentowana profilem, nie loguje się bezpośrednio. | jest stroną umowy, dokonuje płatności (rejestrowanych przez agenta) |
+| Właściciel | Właściciel jednego lub wielu mieszkań, w imieniu którego działa biuro. | powierza mieszkania, odbiera podgląd rozliczeń |
+| Agent / operator | Pracownik biura obsługujący system na co dzień. Główny użytkownik. | rejestruje najemców i mieszkania, wystawia ogłoszenia, zawiera umowy, księguje płatności |
+| Administrator | Osoba odpowiedzialna za system i poprawność danych. | pełen dostęp, korekty błędnych zapisów, usuwanie, zarządzanie strukturą |
 
-## Podział pracy — 4 sekcje wg obszarów
+Mapowanie aktorów na role bazodanowe (sekcja 4): agent → `rental_agent`, administrator → `rental_admin`, podgląd właściciela/raporty → `rental_readonly`.
 
-Każda osoba pracuje w swoim katalogu/obszarze. Szczegóły zadań w `docs/SEKCJE.md`.
+## 3. Wymagania funkcjonalne
 
-| Sekcja | Obszar | Osoba | Główne pliki |
-|--------|--------|-------|--------------|
-| **1** | Analiza wymagań | _________ | `docs/01_analiza_wymagan.md` |
-| **2** | Projekt logiczny i fizyczny (ERD + schemat + 3NF) | _________ | `docs/02_projekt.md`, `sql/01_schema/`, `sql/02_constraints/` |
-| **3** | Implementacja (widoki, funkcje, wyzwalacze, transakcje, zapytania) | _________ | `sql/03_views/`, `sql/04_functions/`, `sql/05_triggers/`, `sql/08_queries/` |
-| **4** | Dokumentacja techniczna + bezpieczeństwo (role/uprawnienia) | _________ | `docs/03_dokumentacja_techniczna.md`, `sql/06_security/` |
+| ID | Wymaganie | Aktor |
+|----|-----------|-------|
+| WF-1 | System umożliwia rejestrację i edycję profilu najemcy (dane osobowe, kontakt, PESEL). | agent |
+| WF-2 | System umożliwia rejestrację właściciela oraz powiązanych z nim mieszkań. | agent |
+| WF-3 | System umożliwia wystawienie ogłoszenia dla mieszkania wraz z ceną miesięczną i opisem. | agent |
+| WF-4 | System umożliwia zawarcie umowy najmu powiązanej z ogłoszeniem i najemcą, z określeniem okresu, czynszu i kaucji. | agent |
+| WF-5 | Po zawarciu aktywnej umowy system automatycznie oznacza powiązane ogłoszenie jako niedostępne (zarezerwowane). | system |
+| WF-6 | System nalicza miesięczne płatności dla aktywnej umowy i pozwala zarejestrować ich opłacenie. | agent / system |
+| WF-7 | System rozróżnia status płatności (oczekująca, opłacona, zaległa) i pozwala wskazać należności przeterminowane. | agent |
+| WF-8 | System udostępnia listę aktualnie dostępnych mieszkań (ogłoszenia aktywne). | wszyscy |
+| WF-9 | System wylicza saldo umowy — kwotę pozostałą do zapłaty. | agent |
+| WF-10 | System wskazuje najemców posiadających zaległości. | agent |
+| WF-11 | System prowadzi historię najmu (kto, gdzie, w jakim okresie, z jakiego powodu zakończono). | system |
+| WF-12 | System pozwala sprawdzić, czy dane mieszkanie jest wolne w zadanym przedziale dat. | agent |
 
-> Sekcje 2, 3 i 4 zależą od siebie w tej kolejności. Sekcja 1 jest punktem wyjścia dla wszystkich. Zob. `docs/SEKCJE.md` po opis zależności i kontrakt między sekcjami (nazwy tabel/kolumn).
+## 4. Wymagania niefunkcjonalne
 
----
+| ID | Wymaganie |
+|----|-----------|
+| WNF-1 | **Integralność danych** — niespójne stany (np. umowa bez najemcy, płatność bez umowy) są niemożliwe dzięki więzom kluczy obcych. |
+| WNF-2 | **Spójność reguł biznesowych** — reguły są egzekwowane w bazie (CHECK, UNIQUE, wyzwalacze), a nie wyłącznie w aplikacji, więc obowiązują niezależnie od kanału dostępu. |
+| WNF-3 | **Bezpieczeństwo** — rozdział uprawnień przez role wg zasady najmniejszych przywilejów; usuwanie danych zarezerwowane dla administratora. |
+| WNF-4 | **Atomowość operacji** — operacje wielokrokowe (np. zawarcie umowy wraz z naliczeniem płatności) wykonywane w transakcji: albo w całości, albo wcale. |
+| WNF-5 | **Odporność na współbieżność** — równoległe operacje na tych samych danych (np. dwie próby zaksięgowania tej samej płatności) nie prowadzą do błędnych stanów, dzięki odpowiednim poziomom izolacji i blokadom. |
+| WNF-6 | **Precyzja finansowa** — kwoty przechowywane jako `NUMERIC`, nigdy jako typy zmiennoprzecinkowe, aby uniknąć błędów zaokrągleń. |
+| WNF-7 | **Audytowalność** — każdy rekord zawiera znaczniki `utworzono`/`zmodyfikowano` aktualizowane automatycznie. |
 
-## Struktura repozytorium
+## 5. Reguły biznesowe (kluczowe dla sekcji 2–3)
 
-```
-rental-db/
-├── README.md                  # ten plik
-├── docs/
-│   ├── SEKCJE.md              # szczegółowy podział pracy + zależności
-│   ├── 01_analiza_wymagan.md  # SEKCJA 1
-│   ├── 02_projekt.md          # SEKCJA 2 (ERD, model logiczny, 3NF)
-│   └── 03_dokumentacja_techniczna.md  # SEKCJA 4
-├── sql/
-│   ├── 01_schema/            # tabele (SEKCJA 2)
-│   ├── 02_constraints/       # klucze obce, CHECK, UNIQUE (SEKCJA 2)
-│   ├── 03_views/             # widoki (SEKCJA 3)
-│   ├── 04_functions/         # funkcje i procedury PL/pgSQL (SEKCJA 3)
-│   ├── 05_triggers/          # wyzwalacze (SEKCJA 3)
-│   ├── 06_security/          # role i uprawnienia (SEKCJA 4)
-│   ├── 07_seed/              # dane testowe (wspólne)
-│   └── 08_queries/           # przykładowe zapytania + transakcje (SEKCJA 3)
-└── scripts/
-    ├── setup.sh              # tworzy bazę i uruchamia wszystko po kolei
-    └── reset.sh              # usuwa i odtwarza bazę
-```
+To jest najważniejsza część dla implementacji. Każda reguła ma wskazane miejsce egzekwowania w bazie.
 
----
+| ID | Reguła | Mechanizm | Plik |
+|----|--------|-----------|------|
+| RB-1 | Data końca umowy musi być późniejsza niż data początku. | CHECK `ch_umowy_daty` | `02_constraints` |
+| RB-2 | Mieszkanie nie może mieć dwóch nakładających się czasowo aktywnych umów. | wyzwalacz `t_umowy_walidacja` | `05_triggers` |
+| RB-3 | Po zawarciu aktywnej umowy ogłoszenie zmienia status z „aktywne" na „zarezerwowane". | wyzwalacz `t_ogloszenie_po_umowie` | `05_triggers` |
+| RB-4 | Dla danej umowy może istnieć tylko jedna płatność za dany miesiąc (okres). | UNIQUE `uq_platnosc_okres` | `02_constraints` |
+| RB-5 | Kwoty czynszu, kaucji i płatności nie mogą być ujemne. | CHECK | `02_constraints` |
+| RB-6 | Powierzchnia mieszkania i liczba pokoi muszą być dodatnie. | CHECK `ch_mieszkania_*` | `02_constraints` |
+| RB-7 | Status ogłoszenia może przyjmować wyłącznie wartości: aktywne / zarezerwowane / zakończone. | CHECK `ch_ogloszenia_status` | `02_constraints` |
+| RB-8 | Status umowy może przyjmować wyłącznie wartości: aktywna / zakończona / rozwiązana. | CHECK `ch_umowy_status` | `02_constraints` |
+| RB-9 | Status płatności może przyjmować wyłącznie: oczekująca / opłacona / zaległa. | CHECK `ch_platnosci_status` | `02_constraints` |
+| RB-10 | Adres e-mail najemcy oraz właściciela jest unikalny. | UNIQUE | `02_constraints` |
+| RB-11 | Znacznik `zmodyfikowano` jest aktualizowany automatycznie przy każdej zmianie rekordu. | wyzwalacz `t_*_mod` | `05_triggers` |
+| RB-12 | Rejestracja płatności blokuje wiersz na czas transakcji, by uniknąć podwójnego zaksięgowania. | `SELECT ... FOR UPDATE` w procedurze `zarejestruj_platnosc` | `04_functions` |
 
-## Uruchomienie
+Zależność dla sekcji 3: reguły RB-2, RB-3, RB-11 to wyzwalacze; RB-12 to logika proceduralna; pozostałe to deklaratywne więzy z sekcji 2.
 
-Wymagany działający PostgreSQL i `psql` w PATH.
+## 6. Słownik pojęć
 
-```bash
-# pełna instalacja od zera (tworzy bazę 'rental_db' i ładuje wszystko)
-./scripts/setup.sh
+- **Właściciel** — osoba posiadająca tytuł prawny do mieszkania, powierzająca je biuru do wynajmu.
+- **Mieszkanie** — konkretna nieruchomość (adres, powierzchnia, liczba pokoi) przypisana do właściciela.
+- **Ogłoszenie** — oferta wynajmu konkretnego mieszkania z ceną miesięczną; ma status określający dostępność.
+- **Najemca** — osoba wynajmująca mieszkanie, będąca stroną umowy.
+- **Umowa najmu** — wiążące porozumienie między najemcą a właścicielem na określony okres, z ustalonym czynszem i kaucją.
+- **Czynsz** — miesięczna opłata za najem ustalona w umowie.
+- **Kaucja** — zwrotne zabezpieczenie wpłacane przy zawarciu umowy.
+- **Płatność** — miesięczna należność powiązana z umową, dotycząca konkretnego okresu (miesiąca).
+- **Okres (płatności)** — miesiąc, którego dotyczy dana płatność (reprezentowany pierwszym dniem miesiąca).
+- **Saldo umowy** — suma kwot nieopłaconych (oczekujących i zaległych) dla danej umowy.
+- **Zaległość** — płatność o statusie „zaległa", tj. nieopłacona po terminie.
+- **Historia najmu** — rejestr trwających i zakończonych najmów wraz z powodem zakończenia.
 
-# wyczyszczenie i ponowne utworzenie
-./scripts/reset.sh
-```
+## 7. Lista encji (wejście dla sekcji 2)
 
-Ręcznie, plik po pliku, w kolejności:
+Siedem encji wynikających z analizy: **najemcy**, **wlasciciele**, **mieszkania**, **ogloszenia**, **umowy_najmu**, **platnosci**, **historia_najmu**.
 
-```bash
-createdb rental_db
-psql -d rental_db -f sql/01_schema/01_tables.sql
-psql -d rental_db -f sql/02_constraints/01_constraints.sql
-psql -d rental_db -f sql/03_views/01_views.sql
-psql -d rental_db -f sql/04_functions/01_functions.sql
-psql -d rental_db -f sql/05_triggers/01_triggers.sql
-psql -d rental_db -f sql/06_security/01_roles.sql
-psql -d rental_db -f sql/07_seed/01_seed.sql
-```
+Zależności między encjami (relacje):
+- właściciel **posiada** wiele mieszkań (1:N),
+- mieszkanie **ma** wiele ogłoszeń w czasie (1:N),
+- ogłoszenie **dotyczy** wielu umów w czasie (1:N),
+- najemca **zawiera** wiele umów (1:N),
+- umowa **generuje** wiele płatności (1:N),
+- umowa, najemca i mieszkanie **są rejestrowane** w historii najmu (1:N).
 
----
-
-## Konwencje (obowiązują wszystkich)
-
-- Nazwy tabel: liczba mnoga, snake_case (`ogloszenia`, `umowy_najmu`).
-- Klucze główne: `id` typu `BIGINT GENERATED ALWAYS AS IDENTITY`.
-- Klucze obce: `<tabela_w_lp>_id` (np. `najemca_id`, `mieszkanie_id`).
-- Znaczniki czasu: `utworzono`/`zmodyfikowano` typu `TIMESTAMPTZ`.
-- Kwoty: `NUMERIC(12,2)`. Nigdy `FLOAT`/`REAL` dla pieniędzy.
-- Każdy plik SQL zaczyna się komentarzem nagłówkowym: za co odpowiada, która sekcja.
-- Praca na osobnych branchach `sekcja-1`, …, `sekcja-4`; merge przez PR.
+Szczegółowe atrybuty, typy i diagram ERD: patrz `docs/02_projekt.md`. Wiążący kontrakt nazw tabel i kolumn: `docs/SEKCJE.md`.
